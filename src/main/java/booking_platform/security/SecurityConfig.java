@@ -2,6 +2,7 @@ package booking_platform.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -60,6 +61,8 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
 
+                .cors(cors -> {})
+
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
                                 SessionCreationPolicy.STATELESS
@@ -67,13 +70,79 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+
+                        // Public authentication
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/error"
-                        )
-                        .permitAll()
-                        .anyRequest()
-                        .authenticated()
+                        ).permitAll()
+
+                        // Vendor-only endpoints
+                        .requestMatchers(
+                                "/api/vendors/**"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        // Vendor's own services endpoint
+                        // MUST come before /api/services/**
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/services/vendor"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        // Public service browsing
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/services/**"
+                        ).permitAll()
+
+                        // Vendor service management
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/services"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/services/**"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        .requestMatchers(
+                                HttpMethod.DELETE,
+                                "/api/services/**"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        // Admin
+                        .requestMatchers(
+                                "/api/admin/**"
+                        ).hasAuthority("ROLE_ADMIN")
+
+                        // Vendor bookings
+                        .requestMatchers(
+                                "/api/bookings/vendor/**"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/bookings/*/status"
+                        ).hasAuthority("ROLE_VENDOR")
+
+                        // Customer bookings
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/bookings/**"
+                        ).hasAuthority("ROLE_CUSTOMER")
+
+                        .requestMatchers(
+                                "/api/bookings/customer/**"
+                        ).hasAuthority("ROLE_CUSTOMER")
+
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/bookings/*/cancel"
+                        ).hasAuthority("ROLE_CUSTOMER")
+
+                        // Everything else requires authentication
+                        .anyRequest().authenticated()
                 )
 
                 .authenticationProvider(authenticationProvider())

@@ -5,13 +5,12 @@ import booking_platform.entity.Booking;
 import booking_platform.entity.BookingStatus;
 import booking_platform.entity.ServiceListing;
 import booking_platform.entity.User;
-import booking_platform.entity.VendorProfile;
 import booking_platform.exception.BookingAuthorizationException;
 import booking_platform.exception.BookingConflictException;
 import booking_platform.repository.BookingRepository;
 import booking_platform.repository.ServiceListingRepository;
 import booking_platform.repository.UserRepository;
-import booking_platform.repository.VendorProfileRepository;
+
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,63 +22,57 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final ServiceListingRepository serviceListingRepository;
     private final UserRepository userRepository;
-    private final VendorProfileRepository vendorProfileRepository;
 
     public BookingService(
             BookingRepository bookingRepository,
             ServiceListingRepository serviceListingRepository,
-            UserRepository userRepository,
-            VendorProfileRepository vendorProfileRepository) {
+            UserRepository userRepository) {
 
         this.bookingRepository = bookingRepository;
         this.serviceListingRepository = serviceListingRepository;
         this.userRepository = userRepository;
-        this.vendorProfileRepository = vendorProfileRepository;
     }
 
-    // Find user ID using email from JWT
-    public Long getUserIdByEmail(String email) {
+    // =========================================================
+    // CREATE BOOKING
+    // =========================================================
 
-        return userRepository.findByEmail(email)
-                .orElseThrow(() ->
-                        new RuntimeException("User not found"))
-                .getId();
-    }
-
-    // Find vendor profile ID using user ID
-    public Long getVendorIdByUserId(Long userId) {
-
-        VendorProfile vendorProfile =
-                vendorProfileRepository.findByUserId(userId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Vendor profile not found"));
-
-        return vendorProfile.getId();
-    }
-
-    // Create booking
-    public Booking createBooking(
+    public BookingResponse createBooking(
             Long customerId,
             Long serviceId,
             LocalDateTime startTime) {
 
-        User customer =
-                userRepository.findById(customerId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Customer not found"));
+        User customer = userRepository
+                .findById(customerId)
+                .orElseThrow(() ->
+                        new RuntimeException("Customer not found"));
 
-        ServiceListing service =
-                serviceListingRepository.findById(serviceId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Service not found"));
+        ServiceListing service = serviceListingRepository
+                .findById(serviceId)
+                .orElseThrow(() ->
+                        new RuntimeException("Service not found"));
+
+        if (startTime == null) {
+            throw new RuntimeException(
+                    "Booking start time is required");
+        }
+
+        if (!startTime.isAfter(LocalDateTime.now())) {
+            throw new RuntimeException(
+                    "Booking time must be in the future");
+        }
+
+        Integer duration = service.getDurationMinutes();
+
+        if (duration == null || duration <= 0) {
+            throw new RuntimeException(
+                    "Invalid service duration");
+        }
 
         LocalDateTime endTime =
-                startTime.plusMinutes(
-                        service.getDurationMinutes());
+                startTime.plusMinutes(duration);
 
+        // Check overlapping bookings
         List<Booking> conflicts =
                 bookingRepository
                         .findByServiceIdAndStartTimeLessThanAndEndTimeGreaterThan(
@@ -88,9 +81,14 @@ public class BookingService {
                                 startTime
                         );
 
-        if (!conflicts.isEmpty()) {
+        boolean hasConflict = conflicts.stream()
+                .anyMatch(booking ->
+                        booking.getStatus() != BookingStatus.CANCELLED
+                );
+
+        if (hasConflict) {
             throw new BookingConflictException(
-                    "Service is already booked for this time"
+                    "This service is already booked for the selected time"
             );
         }
 
@@ -102,65 +100,166 @@ public class BookingService {
         booking.setEndTime(endTime);
         booking.setStatus(BookingStatus.PENDING);
 
-        return bookingRepository.save(booking);
+        Booking savedBooking =
+                bookingRepository.save(booking);
+
+        return toResponse(savedBooking);
     }
 
-    // Get customer bookings
-    public List<Booking> getCustomerBookings(Long customerId) {
+    // =========================================================
+    // CUSTOMER BOOKINGS
+    // =========================================================
 
-        userRepository.findById(customerId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Customer not found"));
+    public List<BookingResponse> getCustomerBookings(
+            Long customerId) {
 
-        return bookingRepository.findByCustomerId(customerId);
+        return bookingRepository
+                .findByCustomerId(customerId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    // Get vendor bookings
-    public List<Booking> getVendorBookings(Long vendorId) {
+    // =========================================================
+    // VENDOR BOOKINGS
+    // =========================================================
 
-        return bookingRepository.findByServiceVendorId(vendorId);
-    }
-
-    // Update booking status
-    public Booking updateBookingStatus(
-            Long bookingId,
-            BookingStatus status,
+    public List<BookingResponse> getVendorBookings(
             Long vendorId) {
 
-        Booking booking =
-                bookingRepository.findById(bookingId)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Booking not found"));
+        return bookingRepository
+                .findByServiceVendorId(vendorId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
 
-        ServiceListing service = booking.getService();
+    // =========================================================
+    // UPDATE BOOKING STATUS
+    // =========================================================
 
-        if (service.getVendor() == null ||
-                !service.getVendor().getId().equals(vendorId)) {
+    public BookingResponse updateBookingStatus(
+            Long bookingId,
+            Long vendorId,
+            BookingStatus status) {
+
+        Booking booking = bookingRepository
+                .findById(bookingId)
+                .orElseThrow(() ->
+                        new RuntimeException("Booking not found"));
+
+        if (booking.getService() == null ||
+                booking.getService().getVendor() == null ||
+                booking.getService()
+                        .getVendor()
+                        .getUser() == null ||
+                !booking.getService()
+                        .getVendor()
+                        .getUser()
+                        .getId()
+                        .equals(vendorId)) {
 
             throw new BookingAuthorizationException(
                     "You are not authorized to update this booking"
             );
         }
 
+        if (status == null) {
+            throw new RuntimeException(
+                    "Booking status is required");
+        }
+
         booking.setStatus(status);
 
-        return bookingRepository.save(booking);
+        Booking savedBooking =
+                bookingRepository.save(booking);
+
+        return toResponse(savedBooking);
     }
 
-    // Convert Booking entity to DTO
-    public BookingResponse convertToResponse(
-            Booking booking) {
+    // =========================================================
+    // CUSTOMER CANCEL BOOKING
+    // =========================================================
 
-        return new BookingResponse(
-                booking.getId(),
-                booking.getCustomer().getId(),
-                booking.getService().getId(),
-                booking.getService().getTitle(),
-                booking.getStartTime(),
-                booking.getEndTime(),
+    public BookingResponse cancelBooking(
+            Long bookingId,
+            Long userId) {
+
+        Booking booking = bookingRepository
+                .findById(bookingId)
+                .orElseThrow(() ->
+                        new RuntimeException("Booking not found"));
+
+        if (booking.getCustomer() == null ||
+                !booking.getCustomer()
+                        .getId()
+                        .equals(userId)) {
+
+            throw new BookingAuthorizationException(
+                    "You are not authorized to cancel this booking"
+            );
+        }
+
+        if (booking.getStatus() == BookingStatus.COMPLETED) {
+            throw new RuntimeException(
+                    "Completed bookings cannot be cancelled"
+            );
+        }
+
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new RuntimeException(
+                    "Booking is already cancelled"
+            );
+        }
+
+        booking.setStatus(BookingStatus.CANCELLED);
+
+        Booking savedBooking =
+                bookingRepository.save(booking);
+
+        return toResponse(savedBooking);
+    }
+
+    // =========================================================
+    // DTO CONVERSION
+    // =========================================================
+
+    public BookingResponse toResponse(Booking booking) {
+
+        BookingResponse response =
+                new BookingResponse();
+
+        response.setId(booking.getId());
+
+        if (booking.getCustomer() != null) {
+            response.setCustomerId(
+                    booking.getCustomer().getId()
+            );
+        }
+
+        if (booking.getService() != null) {
+
+            response.setServiceId(
+                    booking.getService().getId()
+            );
+
+            response.setServiceTitle(
+                    booking.getService().getTitle()
+            );
+        }
+
+        response.setStartTime(
+                booking.getStartTime()
+        );
+
+        response.setEndTime(
+                booking.getEndTime()
+        );
+
+        response.setStatus(
                 booking.getStatus()
         );
+
+        return response;
     }
 }

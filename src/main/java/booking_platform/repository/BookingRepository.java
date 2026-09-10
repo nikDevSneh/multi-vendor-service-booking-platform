@@ -11,7 +11,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     List<Booking> findByServiceIdAndStartTimeLessThanAndEndTimeGreaterThan(
             Long serviceId,
             LocalDateTime endTime,
-            LocalDateTime startTime);
+            LocalDateTime startTime
+    );
+
+    List<Booking> findByServiceId(Long serviceId);
 
     List<Booking> findByCustomerId(Long customerId);
 

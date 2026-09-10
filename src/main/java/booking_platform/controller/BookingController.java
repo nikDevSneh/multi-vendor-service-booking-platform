@@ -1,123 +1,210 @@
 package booking_platform.controller;
 
 import booking_platform.dto.BookingResponse;
-import booking_platform.entity.Booking;
 import booking_platform.entity.BookingStatus;
+import booking_platform.entity.User;
+import booking_platform.exception.BookingAuthorizationException;
+import booking_platform.exception.BookingConflictException;
+import booking_platform.repository.UserRepository;
 import booking_platform.service.BookingService;
-import org.springframework.format.annotation.DateTimeFormat;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/bookings")
+@CrossOrigin(origins = "http://localhost:5173")
 public class BookingController {
 
     private final BookingService bookingService;
+    private final UserRepository userRepository;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(
+            BookingService bookingService,
+            UserRepository userRepository) {
+
         this.bookingService = bookingService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
-    public ResponseEntity<BookingResponse> createBooking(
+    public ResponseEntity<?> createBooking(
             @RequestParam Long serviceId,
-            @RequestParam
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime startTime,
+            @RequestParam String startTime,
             Authentication authentication) {
 
-        String email = authentication.getName();
+        try {
 
-        Long customerId =
-                bookingService.getUserIdByEmail(email);
+            User user = getCurrentUser(authentication);
 
-        Booking booking =
-                bookingService.createBooking(
-                        customerId,
-                        serviceId,
-                        startTime
-                );
+            LocalDateTime parsedStartTime =
+                    LocalDateTime.parse(startTime);
 
-        return ResponseEntity.ok(
-                bookingService.convertToResponse(booking)
-        );
+            BookingResponse response =
+                    bookingService.createBooking(
+                            user.getId(),
+                            serviceId,
+                            parsedStartTime
+                    );
+
+            return ResponseEntity.ok(response);
+
+        } catch (BookingConflictException e) {
+
+            return ResponseEntity
+                    .status(409)
+                    .body(Map.of("message", e.getMessage()));
+
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
     }
 
     @GetMapping("/customer")
-    public ResponseEntity<List<BookingResponse>> getCustomerBookings(
+    public ResponseEntity<?> getCustomerBookings(
             Authentication authentication) {
 
-        String email = authentication.getName();
+        try {
 
-        Long customerId =
-                bookingService.getUserIdByEmail(email);
+            User user = getCurrentUser(authentication);
 
-        List<Booking> bookings =
-                bookingService.getCustomerBookings(customerId);
+            List<BookingResponse> bookings =
+                    bookingService.getCustomerBookings(
+                            user.getId()
+                    );
 
-        List<BookingResponse> responses =
-                bookings.stream()
-                        .map(bookingService::convertToResponse)
-                        .toList();
+            return ResponseEntity.ok(bookings);
 
-        return ResponseEntity.ok(responses);
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
     }
 
     @GetMapping("/vendor")
-    public ResponseEntity<List<BookingResponse>> getVendorBookings(
+    public ResponseEntity<?> getVendorBookings(
             Authentication authentication) {
 
-        String email = authentication.getName();
+        try {
 
-        Long userId =
-                bookingService.getUserIdByEmail(email);
+            User user = getCurrentUser(authentication);
 
-        Long vendorId =
-                bookingService.getVendorIdByUserId(userId);
+            List<BookingResponse> bookings =
+                    bookingService.getVendorBookings(
+                            user.getId()
+                    );
 
-        List<Booking> bookings =
-                bookingService.getVendorBookings(vendorId);
+            return ResponseEntity.ok(bookings);
 
-        List<BookingResponse> responses =
-                bookings.stream()
-                        .map(bookingService::convertToResponse)
-                        .toList();
+        } catch (RuntimeException e) {
 
-        return ResponseEntity.ok(responses);
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
     }
 
     @PutMapping("/{bookingId}/status")
-    public ResponseEntity<BookingResponse> updateBookingStatus(
+    public ResponseEntity<?> updateBookingStatus(
             @PathVariable Long bookingId,
             @RequestParam BookingStatus status,
             Authentication authentication) {
 
-        String email = authentication.getName();
+        try {
 
-        Long userId =
-                bookingService.getUserIdByEmail(email);
+            User user = getCurrentUser(authentication);
 
-        Long vendorId =
-                bookingService.getVendorIdByUserId(userId);
+            BookingResponse response =
+                    bookingService.updateBookingStatus(
+                            bookingId,
+                            user.getId(),
+                            status
+                    );
 
-        Booking booking =
-                bookingService.updateBookingStatus(
-                        bookingId,
-                        status,
-                        vendorId
-                );
+            return ResponseEntity.ok(response);
 
-        return ResponseEntity.ok(
-                bookingService.convertToResponse(booking)
-        );
+        } catch (BookingAuthorizationException e) {
+
+            return ResponseEntity
+                    .status(403)
+                    .body(Map.of("message", e.getMessage()));
+
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{bookingId}/cancel")
+    public ResponseEntity<?> cancelBooking(
+            @PathVariable Long bookingId,
+            Authentication authentication) {
+
+        try {
+
+            User user = getCurrentUser(authentication);
+
+            BookingResponse response =
+                    bookingService.cancelBooking(
+                            bookingId,
+                            user.getId()
+                    );
+
+            return ResponseEntity.ok(response);
+
+        } catch (BookingAuthorizationException e) {
+
+            return ResponseEntity
+                    .status(403)
+                    .body(Map.of("message", e.getMessage()));
+
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
     }
 
     @GetMapping("/test")
-    public String bookingTest() {
-        return "Booking controller is working!";
+    public ResponseEntity<String> test() {
+
+        return ResponseEntity.ok(
+                "Booking controller is working!"
+        );
+    }
+
+    private User getCurrentUser(
+            Authentication authentication) {
+
+        if (authentication == null ||
+                !authentication.isAuthenticated()) {
+
+            throw new RuntimeException(
+                    "Not authenticated"
+            );
+        }
+
+        String email = authentication.getName();
+
+        return userRepository
+                .findByEmail(email)
+                .orElseThrow(() ->
+                        new RuntimeException(
+                                "User not found"
+                        )
+                );
     }
 }

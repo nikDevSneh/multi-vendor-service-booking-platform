@@ -30,29 +30,106 @@ public class AuthService {
         this.jwtUtil = jwtUtil;
     }
 
+    // =========================================================
+    // REGISTER
+    // =========================================================
+
     public User register(
             String email,
             String password,
             String fullName,
             Role role) {
 
-        if (userRepository.findByEmail(email).isPresent()) {
-            throw new RuntimeException("Email already registered");
+        // Email validation
+        if (email == null || email.trim().isEmpty()) {
+            throw new RuntimeException("Email is required");
+        }
+
+        email = email.trim().toLowerCase();
+
+        if (!email.matches(
+                "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$")) {
+
+            throw new RuntimeException(
+                    "Please enter a valid email address");
+        }
+
+        // Password validation
+        if (password == null || password.isEmpty()) {
+            throw new RuntimeException(
+                    "Password is required");
+        }
+
+        if (password.length() < 6) {
+            throw new RuntimeException(
+                    "Password must contain at least 6 characters");
+        }
+
+        // Name validation
+        if (fullName == null ||
+                fullName.trim().isEmpty()) {
+
+            throw new RuntimeException(
+                    "Full name is required");
+        }
+
+        fullName = fullName.trim();
+
+        // Role validation
+        if (role == null) {
+            throw new RuntimeException(
+                    "Role is required");
+        }
+
+        if (role == Role.ROLE_ADMIN) {
+            throw new RuntimeException(
+                    "Admin registration is not allowed");
+        }
+
+        // Duplicate email
+        if (userRepository
+                .findByEmail(email)
+                .isPresent()) {
+
+            throw new RuntimeException(
+                    "Email already registered");
         }
 
         User user = new User();
 
         user.setEmail(email);
-        user.setPassword(passwordEncoder.encode(password));
+        user.setPassword(
+                passwordEncoder.encode(password)
+        );
         user.setFullName(fullName);
         user.setRole(role);
 
         return userRepository.save(user);
     }
 
+    // =========================================================
+    // LOGIN
+    // =========================================================
+
     public String login(
             String email,
             String password) {
+
+        if (email == null ||
+                email.trim().isEmpty()) {
+
+            throw new RuntimeException(
+                    "Email is required");
+        }
+
+        if (password == null ||
+                password.isEmpty()) {
+
+            throw new RuntimeException(
+                    "Password is required");
+        }
+
+        email = email.trim().toLowerCase();
 
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(

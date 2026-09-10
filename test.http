@@ -1,0 +1,6 @@
+### Register Customer
+
+POST http://localhost:8080/api/auth/register
+Content-Type: application/x-www-form-urlencoded
+
+email=customer@gmail.com&password=password123&fullName=Test%20Customer&role=ROLE_CUSTOMER

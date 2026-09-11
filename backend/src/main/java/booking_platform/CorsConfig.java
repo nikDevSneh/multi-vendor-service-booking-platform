@@ -18,8 +18,9 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins(
+                        .allowedOriginPatterns(
                                 frontendUrl,
+                                "https://*.vercel.app",
                                 "http://localhost:5173",
                                 "http://localhost:5174",
                                 "http://localhost:5175",

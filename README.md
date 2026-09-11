@@ -6,6 +6,9 @@ Customers can browse available services and book time slots, vendors can manage 
 
 ---
 
+🌐 Live Project:
+ServiceHub - (https://vercel.com/arcane-88d9/multi-vendor-service-booking-platform/9ZUR7TDb22dGkxm15h49KMjgDA4q)
+
 ## ✨ Features
 
 ### 👤 Customer
